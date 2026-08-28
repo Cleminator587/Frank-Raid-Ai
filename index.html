@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#07120f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Frank — RAID KI</title>
+  <style>
+    :root{--green:#1dffb0;--orange:#ff8b2b;--bg:#06100d;--panel:#0b1713;--white:#f5fff9}
+    *{box-sizing:border-box} html,body{margin:0;height:100%;background:var(--bg);color:var(--white);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    body{background:
+      radial-gradient(circle at 50% 0%,rgba(29,255,176,.16),transparent 30%),
+      radial-gradient(circle at 90% 90%,rgba(255,139,43,.10),transparent 28%),var(--bg)}
+    .app{min-height:100%;max-width:720px;margin:auto;padding:calc(env(safe-area-inset-top) + 22px) 18px calc(env(safe-area-inset-bottom) + 22px);display:flex;flex-direction:column}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .brand{font-size:28px;font-weight:950;letter-spacing:.4px;text-shadow:0 0 20px rgba(29,255,176,.35)}
+    .brand span{color:var(--green)} .status{font-size:13px;opacity:.7}
+    .chat{flex:1;overflow:auto;padding:8px 0 20px;display:flex;flex-direction:column;gap:12px}
+    .msg{max-width:88%;padding:14px 16px;border-radius:18px;line-height:1.4;white-space:pre-wrap}
+    .user{align-self:flex-end;background:rgba(255,139,43,.15);border:1px solid rgba(255,139,43,.35)}
+    .frank{align-self:flex-start;background:rgba(29,255,176,.09);border:1px solid rgba(29,255,176,.28)}
+    .frank b{color:var(--green)} .hint{opacity:.65;font-size:14px;text-align:center;padding:8px 10px 18px}
+    .controls{position:sticky;bottom:0;background:linear-gradient(transparent,rgba(6,16,13,.9) 22%,var(--bg) 45%);padding-top:30px}
+    .inputrow{display:flex;gap:10px}
+    input{flex:1;background:#0a1712;color:white;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:15px 16px;font-size:16px;outline:none}
+    input:focus{border-color:rgba(29,255,176,.6);box-shadow:0 0 0 3px rgba(29,255,176,.08)}
+    button{border:0;cursor:pointer}
+    .send{border-radius:16px;padding:0 18px;background:var(--orange);font-weight:900;color:#160b02}
+    .micwrap{display:flex;justify-content:center;padding:16px 0 4px}
+    .mic{width:84px;height:84px;border-radius:50%;background:white;color:#07120f;font-size:33px;box-shadow:0 0 0 8px rgba(29,255,176,.07),0 0 35px rgba(29,255,176,.28);transition:.15s transform}
+    .mic:active{transform:scale(.95)} .mic.listening{box-shadow:0 0 0 12px rgba(255,139,43,.1),0 0 42px rgba(255,139,43,.55)}
+    .small{font-size:12px;opacity:.55;text-align:center;margin-top:8px}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><span>FRANK</span> RAID KI</div>
+    <div class="status" id="status">bereit</div>
+  </header>
+
+  <main class="chat" id="chat">
+    <div class="msg frank"><b>Frank:</b> Bereit. Frag mich nach Champions, Builds, Teams, Clan Boss, Hydra, Dungeons oder Arena.</div>
+  </main>
+
+  <div class="controls">
+    <div class="hint" id="hint">Schreiben oder Mikro drücken.</div>
+    <div class="inputrow">
+      <input id="input" autocomplete="off" placeholder="z. B. Wie baue ich Kael?" />
+      <button class="send" id="send">→</button>
+    </div>
+    <div class="micwrap"><button class="mic" id="mic" aria-label="Mikrofon">🎙️</button></div>
+    <div class="small">Frank priorisiert HellHades und offizielle RAID/Plarium-Quellen.</div>
+  </div>
+</div>
+<script>
+const chat=document.getElementById('chat'), input=document.getElementById('input'),
+      send=document.getElementById('send'), mic=document.getElementById('mic'),
+      statusEl=document.getElementById('status'), hint=document.getElementById('hint');
+
+let busy=false;
+function addMsg(text, who){
+  const d=document.createElement('div');
+  d.className='msg '+(who==='user'?'user':'frank');
+  d.textContent=(who==='user'?'Du: ':'Frank: ')+text;
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight;
+}
+async function speak(text){
+  try{
+    const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    if(!r.ok) return;
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    const a=new Audio(url);
+    a.onended=()=>URL.revokeObjectURL(url);
+    await a.play();
+  }catch(e){ console.warn('TTS:',e); }
+}
+async function ask(q){
+  q=q.trim(); if(!q||busy)return;
+  busy=true; addMsg(q,'user'); input.value=''; statusEl.textContent='denkt…';
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q})});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'Fehler');
+    addMsg(data.answer,'frank'); statusEl.textContent='spricht…';
+    await speak(data.answer);
+    statusEl.textContent='bereit';
+  }catch(e){
+    addMsg('Fehler: '+e.message,'frank'); statusEl.textContent='Fehler';
+  }finally{busy=false}
+}
+send.onclick=()=>ask(input.value);
+input.addEventListener('keydown',e=>{if(e.key==='Enter')ask(input.value)});
+
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){
+  const rec=new SR(); rec.lang='de-DE'; rec.interimResults=false; rec.continuous=false;
+  rec.onstart=()=>{mic.classList.add('listening');statusEl.textContent='hört zu…';hint.textContent='Sprich jetzt.'}
+  rec.onend=()=>{mic.classList.remove('listening'); if(!busy) statusEl.textContent='bereit'; hint.textContent='Schreiben oder Mikro drücken.'}
+  rec.onerror=e=>{statusEl.textContent='Mikro-Fehler'; console.warn(e)}
+  rec.onresult=e=>{const t=e.results[0][0].transcript; input.value=t; ask(t)}
+  mic.onclick=()=>{try{rec.start()}catch(e){}}
+}else{
+  mic.onclick=()=>{hint.textContent='Spracherkennung wird hier nicht unterstützt. Nutze das Textfeld.'}
+}
+</script>
+</body>
+</html>
